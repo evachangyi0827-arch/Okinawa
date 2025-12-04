@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>沖繩旅行規劃與記帳 App</title>
+    <!-- 載入 Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 載入 Vue 3 CDN -->
+    <script src="https://unpkg.com/vue@3"></script>
+    <!-- 設定 Tailwind 配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'Noto Sans TC', 'sans-serif'],
+                    },
+                    colors: {
+                        'primary-blue': '#0070c9',
+                        'soft-blue': '#f0f8ff',
+                        'okinawa-teal': '#00a99d',
+                        'okinawa-coral': '#ff7f50',
+                        'success-green': '#34d399',
+                        'sea-blue': '#64b5f6',
+                        'private-gold': '#f59e0b',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 確保全螢幕高度和背景 */
+        #app {
+            min-height: 10vh;
+            display: flex;
+            flex-direction: column;
+            background-color: #f7f7f7; /* 淺灰色背景 */
+        }
+        /* 隱藏原生滾動條，確保移動端體驗 */
+        .scrollable-content {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .scrollable-content::-webkit-scrollbar {
+            display: none;
+        }
+        .nav-icon {
+            font-size: 1.5rem;
+        }
+        /* 自定義切換按鈕樣式 */
+        .toggle-tab {
+            @apply px-4 py-2 font-semibold rounded-lg transition-colors duration-200 cursor-pointer text-center;
+        }
+        .toggle-tab-active {
+            @apply bg-okinawa-teal text-white shadow-lg;
+        }
+        .toggle-tab-inactive {
+            @apply bg-gray-100 text-gray-700 hover:bg-gray-200;
+        }
+    </style>
+</head>
+<body class="font-sans">
+
+<div id="app" class="max-w-xl mx-auto shadow-2xl">
+    <!-- 頂部標題和導航欄 -->
+    <header class="bg-white p-4 shadow-md sticky top-0 z-10">
+        <h1 class="text-xl font-bold text-gray-800 text-center flex items-center justify-center">
+            <svg class="w-6 h-6 mr-2 text-okinawa-teal" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-10v10a1 1 0 001 1h3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h0"></path></svg>
+            沖繩自由行助手
+        </h1>
+        <p class="text-xs text-center text-gray-400 mt-1">沖繩：{{ startDate }} - {{ getDisplayDate(`day${Object.keys(itinerary).length}`) }}</p>
+    </header>
+
+    <!-- 主要內容區域 (根據 Tab 切換) -->
+    <main class="flex-grow p-4 scrollable-content overflow-y-auto">
+
+        <!-- 1. 行程規劃 (Itinerary) -->
+        <div v-if="currentTab === 'itinerary'">
+            <!-- 旅行日期設定 -->
+            <div class="bg-white p-4 rounded-xl shadow-lg mb-4">
+                <label for="start-date" class="block text-sm font-medium text-gray-700 mb-1">
+                    旅行開始日期
+                </label>
+                <input type="date" id="start-date" v-model="startDate"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-okinawa-teal focus:border-okinawa-teal">
+            </div>
+
+            <!-- 日期切換 Tab -->
+            <div class="mb-4 flex space-x-2 overflow-x-auto pb-2">
+                <button
+                    v-for="(day, index) in Object.keys(itinerary)" :key="day"
+                    @click="activeDay = day"
+                    :class="[
+                        'px-4 py-2 text-sm font-semibold rounded-full transition-colors duration-200 shadow-md flex-shrink-0',
+                        activeDay === day ? 'bg-okinawa-teal text-white' : 'bg-white text-gray-700 hover:bg-soft-blue'
+                    ]"
+                >
+                    {{ `第 ${index + 1} 天 (${getDisplayDate(day)})` }}
+                </button>
+                <button
+                    @click="addDay"
+                    class="px-3 py-2 text-sm font-semibold rounded-full bg-white text-gray-500 border border-dashed border-gray-300 hover:bg-soft-blue transition-colors duration-200 flex-shrink-0"
+                >
+                    <svg class="w-4 h-4 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                    新增日
+                </button>
+            </div>
+
+            <!-- 當日行程列表 -->
+            <div class="space-y-4">
+                <h2 class="text-lg font-bold text-gray-700 mb-4">
+                    {{ `第 ${Object.keys(itinerary).indexOf(activeDay) + 1} 天行程` }} - {{ getDisplayDate(activeDay) }}
+                </h2>
+
+                <div v-if="itinerary[activeDay] && itinerary[activeDay].length > 0">
+                    <div v-for="(item, index) in itinerary[activeDay]" :key="index"
+                         :class="['bg-white p-4 rounded-xl shadow-lg relative mb-4', item.location.includes('グランステイ旭橋駅前') ? 'border-l-4 border-primary-blue' : 'border-l-4 border-okinawa-coral']">
+                        <div class="flex items-start">
+                            <div class="flex flex-col items-center mr-4">
+                                <div class="font-bold text-lg text-okinawa-teal">{{ item.time }}</div>
+                            </div>
+                            <div class="flex-grow">
+                                <p class="text-gray-900 font-semibold text-base">{{ item.location }}</p>
+                                <p class="text-sm text-gray-500 mb-2">{{ item.details }}</p>
+                                <!-- 地圖/導航按鈕 (Mock Integration) -->
+                                <a :href="`https://www.google.com/maps/search/${item.location}`"
+                                   target="_blank"
+                                   class="inline-flex items-center text-xs text-primary-blue hover:text-okinawa-teal transition duration-150 mt-1">
+                                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                    地圖與導航
+                                </a>
+                            </div>
+
+                            <!-- 編輯/刪除按鈕 -->
+                            <div class="flex space-x-2 ml-2">
+                                <button @click="openItineraryModal(activeDay, index)" class="text-gray-400 hover:text-okinawa-teal">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                </button>
+                                <button @click="deleteItineraryItem(activeDay, index)" class="text-gray-400 hover:text-okinawa-coral">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-else class="text-center p-8 bg-white rounded-xl shadow-lg text-gray-500">
+                    <p>目前第 {{ Object.keys(itinerary).indexOf(activeDay) + 1 }} 天 ({{ getDisplayDate(activeDay) }}) 還沒有行程。</p>
+                </div>
+
+                <!-- 新增行程按鈕 -->
+                <button
+                    @click="openItineraryModal(activeDay, -1)"
+                    class="w-full py-3 bg-okinawa-teal text-white font-bold rounded-xl shadow-md hover:bg-sea-blue transition duration-150 mt-4"
+                >
+                    + 新增行程項目
+                </button>
+            </div>
+        </div>
+
+        <!-- 2. 分帳記帳系統 (Expenses) -->
+        <div v-else-if="currentTab === 'expenses'">
+            <div class="space-y-6">
+                <!-- 新增記帳表單 -->
+                <div class="bg-white p-4 rounded-xl shadow-2xl">
+                    <h2 class="text-lg font-bold text-gray-700 mb-4 border-b pb-2">新增花費</h2>
+                    <form @submit.prevent="addExpense" class="space-y-4">
+
+                        <!-- 步驟 1: 選擇公費/私費 -->
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-2">① 選擇花費類型</label>
+                            <div class="grid grid-cols-2 gap-2">
+                                <label :class="['toggle-tab', newExpense.type === '公費' ? 'toggle-tab-active bg-sea-blue' : 'toggle-tab-inactive']">
+                                    <input type="radio" v-model="newExpense.type" value="公費" class="hidden">
+                                    <svg class="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20v-2c0-.214-.047-.428-.138-.632M20 18v.01M10 12a2 2 0 100-4 2 2 0 000 4zm-4.32-.714A7.413 7.413 0 0110 5.418M11 20a10 10 0 10-2-15"></path></svg>
+                                    公費 (多人分攤)
+                                </label>
+                                <label :class="['toggle-tab', newExpense.type === '私費' ? 'toggle-tab-active bg-private-gold' : 'toggle-tab-inactive']">
+                                    <input type="radio" v-model="newExpense.type" value="私費" class="hidden">
+                                    <svg class="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                                    私費 (個人專屬)
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- 步驟 2: 詳細資訊 -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">描述</label>
+                                <input type="text" v-model="newExpense.description" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-okinawa-teal focus:border-okinawa-teal" placeholder="例如：水族館門票">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">金額 (日圓 ¥)</label>
+                                <input type="number" v-model.number="newExpense.amount" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-okinawa-teal focus:border-okinawa-teal" min="1" placeholder="日圓金額">
+                            </div>
+                        </div>
+
+                        <!-- 步驟 3: 付款人 -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">誰付的錢? (付款人)</label>
+                            <select v-model="newExpense.payer" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-okinawa-teal focus:border-okinawa-teal">
+                                <option v-for="member in members" :key="member" :value="member">{{ member }}</option>
+                            </select>
+                        </div>
+
+                        <!-- 步驟 4: 分攤人 (公費才顯示) -->
+                        <div v-if="newExpense.type === '公費'">
+                            <label class="block text-sm font-medium text-gray-700">誰參與分攤? (公費結算依此清單)</label>
+                            <div class="flex flex-wrap gap-2 mt-1">
+                                <label v-for="member in members" :key="member" class="inline-flex items-center bg-soft-blue px-3 py-1 rounded-full text-sm cursor-pointer hover:bg-gray-100 transition-colors">
+                                    <input type="checkbox" :value="member" v-model="newExpense.participants" class="rounded text-okinawa-teal focus:ring-okinawa-teal">
+                                    <span class="ml-2">{{ member }}</span>
+                                </label>
+                            </div>
+                            <p v-if="newExpense.participants.length === 0" class="text-red-500 text-xs mt-1">公費至少需要一位分攤人。</p>
+                        </div>
+                        <div v-else class="bg-private-gold/10 p-3 rounded-lg text-sm text-private-gold border border-private-gold/30">
+                            **私費提醒：** 類型為「私費」，分攤人將自動設定為 **{{ newExpense.payer }}**，不影響公費結算。
+                        </div>
+
+
+                        <button type="submit"
+                                :disabled="newExpense.participants.length === 0 && newExpense.type === '公費'"
+                                :class="['w-full py-3 text-white font-bold rounded-lg shadow-md transition duration-150 mt-4 disabled:opacity-50', newExpense.type === '公費' ? 'bg-sea-blue hover:bg-okinawa-teal' : 'bg-private-gold hover:bg-yellow-600']">
+                            紀錄 {{ newExpense.type }} 花費 (¥{{ newExpense.amount ? newExpense.amount.toLocaleString() : '0' }})
+                        </button>
+                    </form>
+                </div>
+
+                <!-- 記帳列表 - 統一紀錄 -->
+                <div class="bg-white p-4 rounded-xl shadow-lg">
+                    <h2 class="text-lg font-bold text-gray-700 mb-3">所有記帳紀錄</h2>
+                    <p class="text-xs text-red-500 p-2 bg-red-50 rounded-lg mb-4">
+                        **幣值提醒：** 應用程式預設以日圓 (¥) 結算。以下「機票」和「住宿」初始費用為方便紀錄，暫時使用**台幣金額**，請在實際結算時換算成日圓。
+                    </p>
+                    <div v-if="expenses.length > 0" class="space-y-2">
+                        <div v-for="expense in expenses" :key="expense.id"
+                             :class="['flex items-center justify-between p-3 rounded-xl border transition-shadow', expense.type === '公費' ? 'bg-blue-50 border-blue-200' : 'bg-yellow-50 border-yellow-200']">
+                            <div>
+                                <span :class="['text-xs font-bold px-2 py-0.5 rounded-full', expense.type === '公費' ? 'bg-sea-blue text-white' : 'bg-private-gold text-white']">{{ expense.type }}</span>
+                                <p class="font-semibold text-gray-800 mt-1">{{ expense.description }}</p>
+                                <p class="text-xs text-gray-500 mt-1">
+                                    付款人: <span class="font-medium text-okinawa-teal">{{ expense.payer }}</span>
+                                </p>
+                                <p class="text-xs text-gray-500" v-if="expense.type === '公費'">
+                                    分攤人: {{ expense.participants.join(', ') }}
+                                </p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-xl font-extrabold text-okinawa-coral">¥{{ expense.amount.toLocaleString() }}</p>
+                                <p class="text-xs text-gray-500" v-if="expense.type === '公費'">
+                                    每人應攤: ¥{{ (expense.amount / expense.participants.length).toFixed(0).toLocaleString() }}
+                                </p>
+                                <button @click="deleteExpense(expense.id)" class="text-xs text-gray-400 hover:text-red-500 mt-1">刪除</button>
+                            </div>
+                        </div>
+                    </div>
+                    <p v-else class="text-center text-gray-500 py-4">目前沒有任何花費紀錄。</p>
+                </div>
+
+                <!-- 公費結算結果 (Group Settlement) -->
+                <div class="bg-white p-4 rounded-xl shadow-lg border-t-4 border-sea-blue">
+                    <h2 class="text-lg font-bold text-gray-700 mb-3 flex items-center">
+                        公費結算結果 (需付/收)
+                        <button @click="calculateSettlement" class="ml-2 text-xs bg-gray-100 px-2 py-1 rounded-full text-gray-600 hover:bg-gray-200">
+                            重新計算
+                        </button>
+                    </h2>
+                    <div v-if="settlements.length > 0" class="space-y-2 mt-4">
+                        <div v-for="(settlement, index) in settlements" :key="index"
+                             class="p-3 border-l-4 border-primary-blue bg-soft-blue rounded-lg shadow-sm">
+                            <p class="font-semibold text-gray-800">
+                                <span class="text-okinawa-coral font-extrabold">{{ settlement.from }}</span>
+                                應付
+                                <span class="text-primary-blue font-extrabold">{{ settlement.to }}</span>
+                                <span class="text-xl ml-1">¥{{ settlement.amount.toLocaleString() }}</span>
+                            </p>
+                        </div>
+                    </div>
+                    <p v-else class="text-center text-gray-500 py-4">
+                        公費已結清，無需轉帳！
+                    </p>
+                </div>
+
+                <!-- 私費結算結果 (Private Expense List) - 用於追蹤個人支出總額 -->
+                <div class="bg-white p-4 rounded-xl shadow-lg border-t-4 border-private-gold">
+                    <h2 class="text-lg font-bold text-gray-700 mb-3">
+                        個人私費總額追蹤
+                    </h2>
+                    <div class="space-y-2 mt-4">
+                        <div v-for="(total, member) in privateTotals" :key="member"
+                             class="p-3 border-l-4 border-private-gold bg-yellow-50 rounded-lg shadow-sm flex justify-between items-center">
+                            <p class="font-semibold text-gray-800">
+                                {{ member }} 的私人花費總額
+                            </p>
+                            <p class="text-xl font-extrabold text-private-gold">
+                                ¥{{ total.toLocaleString() }}
+                            </p>
+                        </div>
+                    </div>
+                    <p v-if="Object.keys(privateTotals).length === 0" class="text-center text-gray-500 py-4">
+                        目前沒有私費紀錄。
+                    </p>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- 3. 採購清單 (Shopping List) -->
+        <div v-else-if="currentTab === 'shopping'">
+            <div class="space-y-4">
+                <h2 class="text-lg font-bold text-gray-700 mb-4">沖繩伴手禮/採購清單</h2>
+
+                <div v-if="shoppingList.length > 0" class="space-y-3">
+                    <div v-for="item in shoppingList" :key="item.id"
+                         :class="['bg-white p-3 rounded-xl shadow-lg flex items-center transition duration-200', item.status === '已購' ? 'opacity-60 border-l-4 border-success-green' : 'border-l-4 border-okinawa-coral']">
+
+                        <!-- 圖片和名稱 -->
+                        <div class="flex-shrink-0 mr-4">
+                            <img :src="item.imageUrl"
+                                 alt="採購商品圖片"
+                                 class="w-16 h-16 object-cover rounded-lg shadow-md"
+                                 onerror="this.onerror=null;this.src='https://placehold.co/100x100/00a99d/ffffff?text=無圖';"
+                            >
+                        </div>
+
+                        <!-- 資訊 -->
+                        <div class="flex-grow min-w-0" @click="openShoppingModal(item)">
+                            <p :class="['font-semibold text-base truncate', item.status === '已購' ? 'line-through text-gray-500' : 'text-gray-800']">
+                                {{ item.name }}
+                            </p>
+                            <p class="text-sm text-gray-500 truncate mt-1">
+                                店家: {{ item.store || '未指定' }}
+                            </p>
+                            <p class="text-lg font-bold" :class="item.status === '已購' ? 'text-success-green' : 'text-okinawa-coral'">
+                                ¥{{ item.price ? item.price.toLocaleString() : '???' }}
+                            </p>
+                        </div>
+
+                        <!-- 動作按鈕 -->
+                        <div class="flex flex-col items-center space-y-2 ml-4 flex-shrink-0">
+                            <button @click="toggleShoppingStatus(item)"
+                                    :class="['p-2 rounded-full shadow-md transition duration-150', item.status === '待購' ? 'bg-okinawa-teal text-white hover:bg-sea-blue' : 'bg-success-green text-white hover:bg-success-green/80']"
+                                    title="切換購買狀態">
+                                <svg v-if="item.status === '待購'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            </button>
+                            <button @click="deleteShoppingItem(item.id)" class="text-gray-400 hover:text-red-500" title="刪除項目">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-else class="text-center p-8 bg-white rounded-xl shadow-lg text-gray-500">
+                    <p>目前採購清單是空的，快來新增想買的伴手禮吧！</p>
+                </div>
+
+                <!-- 新增採購項目按鈕 -->
+                <button
+                    @click="openShoppingModal()"
+                    class="w-full py-3 bg-okinawa-coral text-white font-bold rounded-xl shadow-md hover:bg-sea-blue transition duration-150 mt-4"
+                >
+                    + 新增採購項目
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- 底部導航欄 (Sticky Bottom Navigation) -->
+    <nav class="bg-white border-t border-gray-200 p-2 sticky bottom-0 z-10 shadow-2xl">
+        <div class="flex justify-around">
+            <button
+                @click="currentTab = 'itinerary'"
+                :class="['flex flex-col items-center py-1 transition duration-150', currentTab === 'itinerary' ? 'text-okinawa-teal' : 'text-gray-500 hover:text-gray-700']"
+            >
+                <svg class="nav-icon w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h.01M7 21h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                <span class="text-xs font-medium">行程</span>
+            </button>
+            <button
+                @click="currentTab = 'expenses'"
+                :class="['flex flex-col items-center py-1 transition duration-150', currentTab === 'expenses' ? 'text-okinawa-teal' : 'text-gray-500 hover:text-gray-700']"
+            >
+                <svg class="nav-icon w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V3m0 9v3m0 3.01h.01M12 21v-3"></path></svg>
+                <span class="text-xs font-medium">記帳</span>
+            </button>
+            <button
+                @click="currentTab = 'shopping'"
+                :class="['flex flex-col items-center py-1 transition duration-150', currentTab === 'shopping' ? 'text-okinawa-teal' : 'text-gray-500 hover:text-gray-700']"
+            >
+                <svg class="nav-icon w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                <span class="text-xs font-medium">採購</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Modal for Itinerary Editing/Adding (保持原有結構) -->
+    <div v-if="isItineraryModalOpen" class="fixed inset-0 bg-black bg-opacity-50 z-20 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 transform transition-all scale-100">
+            <h3 class="text-xl font-bold mb-4 text-gray-800">{{ isEditing ? '編輯行程項目' : '新增行程項目' }}</h3>
+            <form @submit.prevent="saveItineraryItem" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">時間</label>
+                    <input type="time" v-model="modalItem.time" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-okinawa-teal focus:border-okinawa-teal">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">地點名稱 (可用於地圖搜尋)</label>
+                    <input type="text" v-model="modalItem.location" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-okinawa-teal focus:border-okinawa-teal" placeholder="例如：國際通">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">活動細節 (選填)</label>
+                    <textarea v-model="modalItem.details" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-okinawa-teal focus:border-okinawa-teal" placeholder="例如：晚餐品嚐阿古豬"></textarea>
+                </div>
+                <div class="flex justify-end space-x-3 mt-6">
+                    <button type="button" @click="closeItineraryModal" class="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">取消</button>
+                    <button type="submit" class="px-4 py-2 bg-okinawa-teal text-white font-semibold rounded-lg shadow-md hover:bg-sea-blue transition duration-150">
+                        儲存
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal for Shopping List Editing/Adding (保持原有結構) -->
+    <div v-if="isShoppingModalOpen" class="fixed inset-0 bg-black bg-opacity-50 z-20 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 transform transition-all scale-100">
+            <h3 class="text-xl font-bold mb-4 text-gray-800">{{ isShoppingEditing ? '編輯採購項目' : '新增採購項目' }}</h3>
+            <form @submit.prevent="saveShoppingItem" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">商品名稱</label>
+                    <input type="text" v-model="modalShoppingItem.name" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-okinawa-teal focus:border-okinawa-teal" placeholder="例如：紅芋塔">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">店家名稱 (選填)</label>
+                    <input type="text" v-model="modalShoppingItem.store" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-okinawa-teal focus:border-okinawa-teal" placeholder="例如：御菓子御殿">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">預計價格 (日圓 ¥)</label>
+                    <input type="number" v-model.number="modalShoppingItem.price" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-okinawa-teal focus:border-okinawa-teal" min="0">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">圖片網址 (選填)</label>
+                    <input type="url" v-model="modalShoppingItem.imageUrl" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-okinawa-teal focus:border-okinawa-teal" placeholder="例如：https://placehold.co/100x100/...">
+                </div>
+                <div class="flex justify-end space-x-3 mt-6">
+                    <button type="button" @click="closeShoppingModal" class="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">取消</button>
+                    <button type="submit" class="px-4 py-2 bg-okinawa-coral text-white font-semibold rounded-lg shadow-md hover:bg-sea-blue transition duration-150">
+                        儲存
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, reactive, computed, watch } = Vue
+
+    createApp({
+        setup() {
+            // --- 應用程式狀態 ---
+            const currentTab = ref('itinerary') // 預設打開行程頁面
+            const members = reactive(['老王', '鴨子', '老張']) // 旅行成員名單
+            const nextExpenseId = ref(5)
+            const nextShoppingId = ref(3)
+
+            // 行程相關狀態
+            const startDate = ref('2026-03-14')
+            const itinerary = reactive({
+                // --- Day 1 (3/14): 新增 Check-in 細節 ---
+                'day1': [
+                    { time: '13:50', location: '高雄小港國際機場 (KHH)', details: '華航 CI132 辦理登機手續 (15:50 起飛)' },
+                    { time: '18:30', location: '那霸國際機場 (OKA)', details: '抵達沖繩，入境與領取行李' },
+                    { time: '19:30', location: 'かりゆしコンドミニアムリゾート那覇 グランステイ旭橋駅前', details: '住宿 Check-in (豪華房-可住4人, 1-17-2 Izumizaki)' },
+                    { time: '21:00', location: '那霸市區', details: '晚餐 (國際通或附近)' }
+                ],
+                'day2': [
+                    { time: '09:00', location: '沖繩美麗海水族館', details: '觀看黑潮之海大水槽' },
+                    { time: '14:00', location: '古宇利島', details: '開車跨海大橋，環島遊' }
+                ],
+                'day3': [
+                    { time: '10:00', location: '玉泉洞 (Gyokusendo Cave)', details: '參觀鐘乳石洞與王國村' },
+                    { time: '15:00', location: '美國村 (American Village)', details: '感受異國風情與落日海灘' }
+                ],
+                'day4': [
+                    { time: '10:00', location: '港川外人住宅', details: '文青甜點店巡禮 (OHacorte 水果塔)' },
+                    { time: '14:00', location: 'PARCO CITY', details: '最後衝刺購物' }
+                ],
+                // --- Day 5 (3/18): 新增 Check-out 細節並調整順序 ---
+                'day5': [
+                    { time: '10:00', location: 'かりゆしコンドミニアムリゾート那覇 グランステイ旭橋駅前', details: '退房 Check-out (最晚 10:00)' },
+                    { time: '11:00', location: '波上宮', details: '參拜神社與海灘散步' }, // 順序後移
+                    { time: '12:00', location: '瀨長島 / Outlet', details: '享受最後的沖繩時光與午餐' },
+                    { time: '17:30', location: '那霸機場 (Naha Airport)', details: '辦理登機手續 (華航 CI133)' },
+                    { time: '19:30', location: '那霸機場', details: '搭乘 CI133 起飛返回高雄' },
+                    { time: '20:25', location: '高雄小港國際機場 (KHH)', details: '抵達高雄，平安歸賦' }
+                ]
+            })
+            const activeDay = ref('day1')
+
+            // 記帳資料 (機票與住宿 公費紀錄，付款人皆為老張)
+            const expenses = reactive([
+                // 機票總費用 28974 TWD
+                { id: 1, type: '公費', description: '機票總費用 (TWD: 28974)', amount: 28974, payer: '老張', participants: ['老王', '鴨子', '老張'] },
+                // 住宿總費用 19847 TWD
+                { id: 2, type: '公費', description: '住宿總費用 (TWD: 19847)', amount: 19847, payer: '老張', participants: ['老王', '鴨子', '老張'] },
+                // 私費範例: 1人分攤
+                { id: 3, type: '私費', description: '個人零食', amount: 900, payer: '老張', participants: ['老張'] },
+                // 公費範例: 2人分攤
+                { id: 4, type: '公費', description: '租車油費', amount: 4500, payer: '老張', participants: ['老王', '鴨子'] },
+            ])
+
+            nextExpenseId.value = 5;
+
+            // 預設採購清單資料
+            const shoppingList = reactive([
+                { id: 1, name: '紅芋塔', store: '御菓子御殿 國際通', price: 1500, imageUrl: 'https://placehold.co/100x100/A3006D/ffffff?text=紅芋', status: '待購' },
+                { id: 2, name: '海葡萄', store: '牧志公設市場', price: 800, imageUrl: 'https://placehold.co/100x100/808000/ffffff?text=海葡萄', status: '待購' },
+            ])
+
+            // 新增花費表單狀態
+            const newExpense = reactive({
+                type: '公費', // 預設為公費
+                description: '',
+                amount: null,
+                payer: members[0],
+                participants: [...members] // 預設全選 (公費模式)
+            })
+
+            // 分帳結果狀態
+            const settlements = ref([])
+
+            // 私費總額計算
+            const privateTotals = computed(() => {
+                const totals = {}
+                members.forEach(m => totals[m] = 0)
+
+                expenses.filter(e => e.type === '私費').forEach(expense => {
+                    const payer = expense.payer
+                    totals[payer] += expense.amount
+                })
+
+                return Object.keys(totals).reduce((acc, key) => {
+                    if (totals[key] > 0) {
+                        acc[key] = totals[key]
+                    }
+                    return acc
+                }, {})
+            })
+
+            // 監聽 type 變化，自動調整 participants 欄位
+            watch(() => newExpense.type, (newType) => {
+                if (newType === '公費') {
+                    newExpense.participants = [...members]
+                } else if (newType === '私費') {
+                    newExpense.participants = [newExpense.payer]
+                }
+            })
+
+            // 監聽 payer 變化，如果當前是私費，也需要更新 participants
+            watch(() => newExpense.payer, (newPayer) => {
+                if (newExpense.type === '私費') {
+                    newExpense.participants = [newPayer]
+                }
+            })
+
+
+            // --- 行程規劃功能 (Itinerary Functions) ---
+
+            const getDisplayDate = (dayKey) => {
+                try {
+                    const dayNumber = parseInt(dayKey.replace('day', ''))
+                    if (isNaN(dayNumber)) return 'N/A'
+                    const start = new Date(startDate.value)
+                    if (isNaN(start.getTime())) return '日期錯誤'
+                    const targetDate = new Date(start)
+                    targetDate.setDate(start.getDate() + dayNumber - 1)
+                    const month = targetDate.getMonth() + 1
+                    const day = targetDate.getDate()
+                    return `${month}/${day}`
+                } catch (e) {
+                    return '日期錯誤'
+                }
+            }
+            const addDay = () => {
+                const dayCount = Object.keys(itinerary).length
+                const newDayKey = `day${dayCount + 1}`
+                itinerary[newDayKey] = []
+                activeDay.value = newDayKey
+            }
+            const deleteItineraryItem = (dayKey, index) => { itinerary[dayKey].splice(index, 1) }
+
+            // 行程 Modal 相關
+            const isItineraryModalOpen = ref(false)
+            const modalItem = reactive({ dayKey: '', index: -1, time: '09:00', location: '', details: '' })
+            const isEditing = computed(() => modalItem.index !== -1)
+            const openItineraryModal = (dayKey, index) => {
+                modalItem.dayKey = dayKey
+                modalItem.index = index
+                if (index !== -1) {
+                    const item = itinerary[dayKey][index]
+                    modalItem.time = item.time
+                    modalItem.location = item.location
+                    modalItem.details = item.details
+                } else {
+                    modalItem.time = '09:00'
+                    modalItem.location = ''
+                    modalItem.details = ''
+                }
+                isItineraryModalOpen.value = true
+            }
+            const closeItineraryModal = () => { isItineraryModalOpen.value = false }
+            const saveItineraryItem = () => {
+                const itemData = { time: modalItem.time, location: modalItem.location, details: modalItem.details }
+                if (modalItem.index !== -1) {
+                    itinerary[modalItem.dayKey][modalItem.index] = itemData
+                } else {
+                    itinerary[modalItem.dayKey].push(itemData)
+                }
+                itinerary[modalItem.dayKey].sort((a, b) => a.time.localeCompare(b.time))
+                closeItineraryModal()
+            }
+
+
+            // --- 分帳記帳功能 (Expense Functions) ---
+
+            const addExpense = () => {
+                if (newExpense.amount > 0 && newExpense.description) {
+                    const expenseType = newExpense.type
+                    let participantsList = []
+
+                    if (expenseType === '公費') {
+                        if (newExpense.participants.length === 0) return
+                        participantsList = [...newExpense.participants]
+                    } else if (expenseType === '私費') {
+                        participantsList = [newExpense.payer]
+                    }
+
+                    expenses.push({
+                        id: nextExpenseId.value++,
+                        type: expenseType,
+                        description: newExpense.description,
+                        amount: newExpense.amount,
+                        payer: newExpense.payer,
+                        participants: participantsList
+                    })
+
+                    // 重設表單 (保持 type 和 payer 不變，重設其他欄位)
+                    newExpense.description = ''
+                    newExpense.amount = null
+                    newExpense.participants = newExpense.type === '公費' ? [...members] : [newExpense.payer]
+
+                    calculateSettlement()
+                }
+            }
+
+            const deleteExpense = (id) => {
+                const index = expenses.findIndex(e => e.id === id)
+                if (index !== -1) {
+                    expenses.splice(index, 1)
+                    calculateSettlement()
+                }
+            }
+
+            // 核心分帳邏輯 (只針對 type = '公費' 的支出進行結算)
+            const calculateSettlement = () => {
+                const netBalances = {}
+                members.forEach(m => netBalances[m] = 0)
+
+                // 只篩選公費進行結算
+                const groupExpenses = expenses.filter(e => e.type === '公費')
+
+                groupExpenses.forEach(expense => {
+                    // 使用 Math.round(cost * 100) / 100 處理浮點數
+                    const costPerPerson = Math.round((expense.amount / expense.participants.length) * 100) / 100
+                    const payer = expense.payer
+
+                    members.forEach(member => {
+                        if (expense.participants.includes(member)) {
+                            netBalances[member] -= costPerPerson // 應付
+                        }
+                        if (member === payer) {
+                            netBalances[member] += expense.amount // 已付
+                        }
+                    })
+                })
+
+                // 2. 找出債權人 (Creditors: 淨餘額 > 1) 和債務人 (Debtors: 淨餘額 < -1)
+                let creditors = []
+                let debtors = []
+                for (const member in netBalances) {
+                    const balance = Math.round(netBalances[member] * 100) / 100
+                    // 為了避免浮點數誤差，只結算絕對值大於 1 的金額
+                    if (balance > 1) {
+                        creditors.push({ name: member, amount: balance })
+                    } else if (balance < -1) {
+                        debtors.push({ name: member, amount: Math.abs(balance) })
+                    }
+                }
+
+                // 3. 結算 (簡化交易)
+                const newSettlements = []
+                let i = 0
+                let j = 0
+                while (i < debtors.length && j < creditors.length) {
+                    const debtor = debtors[i]
+                    const creditor = creditors[j]
+                    const amountToTransfer = Math.min(debtor.amount, creditor.amount)
+                    if (amountToTransfer > 0) {
+                        newSettlements.push({
+                            from: debtor.name,
+                            to: creditor.name,
+                            amount: Math.round(amountToTransfer) // 四捨五入到整數
+                        })
+                        debtor.amount -= amountToTransfer
+                        creditor.amount -= amountToTransfer
+                    }
+                    if (debtor.amount <= 1) { i++ } // 使用 1 作為結束判斷
+                    if (creditor.amount <= 1) { j++ } // 使用 1 作為結束判斷
+                }
+
+                settlements.value = newSettlements
+            }
+
+
+            // --- 採購清單功能 (Shopping Functions) ---
+
+            const isShoppingModalOpen = ref(false)
+            const modalShoppingItem = reactive({ id: 0, name: '', store: '', price: null, imageUrl: '', status: '待購' })
+            const isShoppingEditing = computed(() => modalShoppingItem.id !== 0)
+
+            const openShoppingModal = (item = null) => {
+                if (item) {
+                    modalShoppingItem.id = item.id;
+                    modalShoppingItem.name = item.name;
+                    modalShoppingItem.store = item.store;
+                    modalShoppingItem.price = item.price;
+                    modalShoppingItem.imageUrl = item.imageUrl;
+                    modalShoppingItem.status = item.status;
+                } else {
+                    modalShoppingItem.id = 0;
+                    modalShoppingItem.name = '';
+                    modalShoppingItem.store = '';
+                    modalShoppingItem.price = null;
+                    modalShoppingItem.imageUrl = 'https://placehold.co/100x100/00a99d/ffffff?text=商品';
+                    modalShoppingItem.status = '待購';
+                }
+                isShoppingModalOpen.value = true;
+            }
+
+            const closeShoppingModal = () => { isShoppingModalOpen.value = false }
+            const saveShoppingItem = () => {
+                if (!modalShoppingItem.name || modalShoppingItem.price === null || modalShoppingItem.price < 0) return;
+                const itemData = {
+                    name: modalShoppingItem.name,
+                    store: modalShoppingItem.store,
+                    price: modalShoppingItem.price,
+                    imageUrl: modalShoppingItem.imageUrl || `https://placehold.co/100x100/00a99d/ffffff?text=${encodeURIComponent(modalShoppingItem.name.substring(0, 2))}`,
+                    status: modalShoppingItem.status,
+                };
+                if (modalShoppingItem.id !== 0) {
+                    const index = shoppingList.findIndex(i => i.id === modalShoppingItem.id);
+                    if (index !== -1) { Object.assign(shoppingList[index], { ...itemData, id: modalShoppingItem.id }); }
+                } else {
+                    shoppingList.push({ ...itemData, id: nextShoppingId.value++ });
+                }
+                closeShoppingModal();
+            }
+            const toggleShoppingStatus = (item) => { item.status = item.status === '待購' ? '已購' : '待購'; }
+            const deleteShoppingItem = (id) => {
+                const index = shoppingList.findIndex(i => i.id === id);
+                if (index !== -1) { shoppingList.splice(index, 1); }
+            }
+
+
+            // 初始載入時計算一次分帳
+            calculateSettlement()
+
+            return {
+                currentTab,
+                members,
+                startDate,
+                itinerary,
+                activeDay,
+                expenses,
+                newExpense,
+                settlements,
+                privateTotals,
+                shoppingList,
+                isItineraryModalOpen,
+                modalItem,
+                isEditing,
+                isShoppingModalOpen,
+                modalShoppingItem,
+                isShoppingEditing,
+
+                getDisplayDate,
+                addDay,
+                deleteItineraryItem,
+                openItineraryModal,
+                closeItineraryModal,
+                saveItineraryItem,
+                addExpense,
+                deleteExpense,
+                calculateSettlement,
+                openShoppingModal,
+                closeShoppingModal,
+                saveShoppingItem,
+                toggleShoppingStatus,
+                deleteShoppingItem,
+            }
+        }
+    }).mount('#app')
+</script>
+
+</body>
+</html>
