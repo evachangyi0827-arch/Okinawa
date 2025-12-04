@@ -6,8 +6,7 @@
     <title>沖繩旅行規劃與記帳 App</title>
     <!-- 載入 Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 載入 Vue 3 CDN -->
-    <script src="https://unpkg.com/vue@3"></script>
+    
     <!-- 設定 Tailwind 配置 -->
     <script>
         tailwind.config = {
@@ -161,7 +160,22 @@
 
         <!-- 2. 分帳記帳系統 (Expenses) -->
         <div v-else-if="currentTab === 'expenses'">
-            <div class="space-y-6">
+
+            <div v-if="!isAuthReady" class="text-center p-8 bg-white rounded-xl shadow-lg text-gray-500">
+                <svg class="animate-spin h-6 w-6 mr-3 text-okinawa-teal inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p>正在載入資料庫，請稍候...</p>
+            </div>
+
+            <div v-else class="space-y-6">
+                 <!-- 用戶 ID 資訊 -->
+                <div class="bg-gray-800 p-3 rounded-xl shadow-lg text-white text-xs">
+                    <p class="font-bold mb-1">您的用戶 ID (用於共享資料):</p>
+                    <p class="break-all font-mono text-okinawa-teal text-sm">{{ userId || 'N/A' }}</p>
+                </div>
+
                 <!-- 新增記帳表單 -->
                 <div class="bg-white p-4 rounded-xl shadow-2xl">
                     <h2 class="text-lg font-bold text-gray-700 mb-4 border-b pb-2">新增花費</h2>
@@ -221,7 +235,7 @@
 
 
                         <button type="submit"
-                                :disabled="newExpense.participants.length === 0 && newExpense.type === '公費'"
+                                :disabled="!isAuthReady || (newExpense.participants.length === 0 && newExpense.type === '公費')"
                                 :class="['w-full py-3 text-white font-bold rounded-lg shadow-md transition duration-150 mt-4 disabled:opacity-50', newExpense.type === '公費' ? 'bg-sea-blue hover:bg-okinawa-teal' : 'bg-private-gold hover:bg-yellow-600']">
                             紀錄 {{ newExpense.type }} 花費 (¥{{ newExpense.amount ? newExpense.amount.toLocaleString() : '0' }})
                         </button>
@@ -230,9 +244,9 @@
 
                 <!-- 記帳列表 - 統一紀錄 -->
                 <div class="bg-white p-4 rounded-xl shadow-lg">
-                    <h2 class="text-lg font-bold text-gray-700 mb-3">所有記帳紀錄</h2>
+                    <h2 class="text-lg font-bold text-gray-700 mb-3">所有記帳紀錄 ({{ isAuthReady ? '已連線' : '未連線' }})</h2>
                     <p class="text-xs text-red-500 p-2 bg-red-50 rounded-lg mb-4">
-                        **幣值提醒：** 應用程式預設以日圓 (¥) 結算。以下「機票」和「住宿」初始費用為方便紀錄，暫時使用**台幣金額**，請在實際結算時換算成日圓。
+                        **資料已儲存到雲端**：所有新增/刪除的紀錄會即時同步至 Firebase Firestore。
                     </p>
                     <div v-if="expenses.length > 0" class="space-y-2">
                         <div v-for="expense in expenses" :key="expense.id"
@@ -247,16 +261,16 @@
                                     分攤人: {{ expense.participants.join(', ') }}
                                 </p>
                             </div>
-                            <div class="text-right">
+                            <div class="text-right flex flex-col items-end">
                                 <p class="text-xl font-extrabold text-okinawa-coral">¥{{ expense.amount.toLocaleString() }}</p>
                                 <p class="text-xs text-gray-500" v-if="expense.type === '公費'">
                                     每人應攤: ¥{{ (expense.amount / expense.participants.length).toFixed(0).toLocaleString() }}
                                 </p>
-                                <button @click="deleteExpense(expense.id)" class="text-xs text-gray-400 hover:text-red-500 mt-1">刪除</button>
+                                <button @click="deleteExpense(expense.id)" class="text-xs text-gray-400 hover:text-red-500 mt-1" :disabled="!isAuthReady">刪除</button>
                             </div>
                         </div>
                     </div>
-                    <p v-else class="text-center text-gray-500 py-4">目前沒有任何花費紀錄。</p>
+                    <p v-else class="text-center text-gray-500 py-4">目前沒有任何花費紀錄。請新增第一筆帳目！</p>
                 </div>
 
                 <!-- 公費結算結果 (Group Settlement) -->
@@ -455,21 +469,44 @@
     </div>
 </div>
 
-<script>
-    const { createApp, ref, reactive, computed, watch } = Vue
+<!-- 修正後的單一模組腳本區塊 -->
+<script type="module">
+    // 顯式匯入 Vue 函式 - 修正為 ES Module 專用路徑
+    import { createApp, ref, reactive, computed, watch, onMounted } from "https://unpkg.com/vue@3/dist/vue.esm-browser.js";
+    
+    // 顯式匯入所有必要的 Firebase 模組函式
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, onSnapshot, addDoc, deleteDoc, doc, setLogLevel, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // 將所有 Firebase 函式打包成一個物件，方便在 setup 函式中解構
+    const firebaseUtils = {
+        initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+        getFirestore, collection, onSnapshot, addDoc, deleteDoc, doc, setLogLevel, query
+    };
 
     createApp({
         setup() {
+            // 從統一的物件中解構 Firebase 函式
+            const { 
+                initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+                getFirestore, collection, onSnapshot, addDoc, deleteDoc, doc, setLogLevel, query 
+            } = firebaseUtils;
+
+
             // --- 應用程式狀態 ---
-            const currentTab = ref('itinerary') // 預設打開行程頁面
+            const currentTab = ref('itinerary')
             const members = reactive(['老王', '鴨子', '老張']) // 旅行成員名單
-            const nextExpenseId = ref(5)
-            const nextShoppingId = ref(3)
+            
+            // Firebase 狀態
+            const db = ref(null);
+            const auth = ref(null);
+            const userId = ref(null);
+            const isAuthReady = ref(false); // 驗證和DB準備好才允許操作
 
             // 行程相關狀態
             const startDate = ref('2026-03-14')
             const itinerary = reactive({
-                // --- Day 1 (3/14): 新增 Check-in 細節 ---
                 'day1': [
                     { time: '13:50', location: '高雄小港國際機場 (KHH)', details: '華航 CI132 辦理登機手續 (15:50 起飛)' },
                     { time: '18:30', location: '那霸國際機場 (OKA)', details: '抵達沖繩，入境與領取行李' },
@@ -488,10 +525,9 @@
                     { time: '10:00', location: '港川外人住宅', details: '文青甜點店巡禮 (OHacorte 水果塔)' },
                     { time: '14:00', location: 'PARCO CITY', details: '最後衝刺購物' }
                 ],
-                // --- Day 5 (3/18): 新增 Check-out 細節並調整順序 ---
                 'day5': [
                     { time: '10:00', location: 'かりゆしコンドミニアムリゾート那覇 グランステイ旭橋駅前', details: '退房 Check-out (最晚 10:00)' },
-                    { time: '11:00', location: '波上宮', details: '參拜神社與海灘散步' }, // 順序後移
+                    { time: '11:00', location: '波上宮', details: '參拜神社與海灘散步' },
                     { time: '12:00', location: '瀨長島 / Outlet', details: '享受最後的沖繩時光與午餐' },
                     { time: '17:30', location: '那霸機場 (Naha Airport)', details: '辦理登機手續 (華航 CI133)' },
                     { time: '19:30', location: '那霸機場', details: '搭乘 CI133 起飛返回高雄' },
@@ -500,25 +536,15 @@
             })
             const activeDay = ref('day1')
 
-            // 記帳資料 (機票與住宿 公費紀錄，付款人皆為老張)
-            const expenses = reactive([
-                // 機票總費用 28974 TWD
-                { id: 1, type: '公費', description: '機票總費用 (TWD: 28974)', amount: 28974, payer: '老張', participants: ['老王', '鴨子', '老張'] },
-                // 住宿總費用 19847 TWD
-                { id: 2, type: '公費', description: '住宿總費用 (TWD: 19847)', amount: 19847, payer: '老張', participants: ['老王', '鴨子', '老張'] },
-                // 私費範例: 1人分攤
-                { id: 3, type: '私費', description: '個人零食', amount: 900, payer: '老張', participants: ['老張'] },
-                // 公費範例: 2人分攤
-                { id: 4, type: '公費', description: '租車油費', amount: 4500, payer: '老張', participants: ['老王', '鴨子'] },
-            ])
+            // 記帳資料 (初始為空，將由 Firestore 填充)
+            const expenses = reactive([])
 
-            nextExpenseId.value = 5;
-
-            // 預設採購清單資料
+            // 採購清單資料
             const shoppingList = reactive([
-                { id: 1, name: '紅芋塔', store: '御菓子御殿 國際通', price: 1500, imageUrl: 'https://placehold.co/100x100/A3006D/ffffff?text=紅芋', status: '待購' },
-                { id: 2, name: '海葡萄', store: '牧志公設市場', price: 800, imageUrl: 'https://placehold.co/100x100/808000/ffffff?text=海葡萄', status: '待購' },
+                { id: 's1', name: '紅芋塔', store: '御菓子御殿 國際通', price: 1500, imageUrl: 'https://placehold.co/100x100/A3006D/ffffff?text=紅芋', status: '待購' },
+                { id: 's2', name: '海葡萄', store: '牧志公設市場', price: 800, imageUrl: 'https://placehold.co/100x100/808000/ffffff?text=海葡萄', status: '待購' },
             ])
+            const nextShoppingId = ref(3) // 用於本地採購清單新增（未持久化）
 
             // 新增花費表單狀態
             const newExpense = reactive({
@@ -531,6 +557,150 @@
 
             // 分帳結果狀態
             const settlements = ref([])
+
+
+            // --- Firebase 初始化與資料同步 ---
+
+            const getAppId = () => typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+            const getExpensesCollection = (dbInstance, currentUserId) => {
+                const appId = getAppId();
+                // 使用私有路徑，確保只有當前用戶能存取自己的記帳資料
+                const collectionPath = `artifacts/${appId}/users/${currentUserId}/expenses`;
+                return collection(dbInstance, collectionPath);
+            };
+
+            const initFirebaseAndAuth = async () => {
+                if (!initializeApp || !getAuth || !getFirestore) {
+                    console.error("Firebase utilities are not available. This is a crucial error.");
+                    isAuthReady.value = true;
+                    return;
+                }
+
+                try {
+                    setLogLevel('Debug');
+                    const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+                    if (!firebaseConfig.apiKey) {
+                        console.error("Firebase configuration missing. Running without persistence.");
+                        isAuthReady.value = true;
+                        return;
+                    }
+
+                    const app = initializeApp(firebaseConfig);
+                    auth.value = getAuth(app);
+                    db.value = getFirestore(app);
+
+                    // 1. Authenticate
+                    await new Promise(resolve => {
+                        const unsubscribe = onAuthStateChanged(auth.value, async (user) => {
+                            if (!user) {
+                                const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                                if (token) {
+                                    await signInWithCustomToken(auth.value, token);
+                                } else {
+                                    await signInAnonymously(auth.value);
+                                }
+                            }
+                            userId.value = auth.value.currentUser?.uid || crypto.randomUUID();
+                            isAuthReady.value = true;
+                            unsubscribe();
+                            resolve();
+                        });
+                    });
+
+                    // 2. Setup Listener after Auth
+                    setupFirestoreListener(db.value, userId.value);
+
+                } catch (error) {
+                    console.error("Firebase initialization or authentication failed:", error);
+                    isAuthReady.value = true; // Still allow app to run without DB interaction
+                }
+            };
+
+            const setupFirestoreListener = (dbInstance, currentUserId) => {
+                if (!dbInstance || !currentUserId) return;
+
+                const q = getExpensesCollection(dbInstance, currentUserId);
+
+                onSnapshot(q, (snapshot) => {
+                    const fetchedExpenses = [];
+                    snapshot.forEach(doc => {
+                        // 確保從 Firestore 取回的 id 作為唯一的 key
+                        fetchedExpenses.push({ id: doc.id, ...doc.data() });
+                    });
+                    
+                    // 完全取代本地陣列以反映 Firestore 的最新狀態
+                    expenses.splice(0, expenses.length, ...fetchedExpenses);
+                    
+                    // 重新計算結算結果
+                    calculateSettlement();
+                    console.log(`Firestore synced: ${expenses.length} expenses loaded.`);
+                }, (error) => {
+                    console.error("Firestore onSnapshot failed:", error);
+                });
+            };
+
+            onMounted(() => {
+                initFirebaseAndAuth();
+            });
+
+
+            // --- 記帳功能 (Expense Functions) ---
+
+            const addExpense = async () => {
+                if (!isAuthReady.value || newExpense.amount <= 0 || !newExpense.description) return;
+
+                const expenseType = newExpense.type
+                let participantsList = []
+
+                if (expenseType === '公費') {
+                    if (newExpense.participants.length === 0) return
+                    participantsList = [...newExpense.participants]
+                } else if (expenseType === '私費') {
+                    participantsList = [newExpense.payer]
+                }
+
+                const expenseData = {
+                    type: expenseType,
+                    description: newExpense.description,
+                    amount: newExpense.amount,
+                    payer: newExpense.payer,
+                    participants: participantsList
+                };
+
+                if (db.value && userId.value) {
+                    try {
+                        // 使用 addDoc 新增文件到 Firestore
+                        await addDoc(getExpensesCollection(db.value, userId.value), expenseData);
+                        console.log("Expense added to Firestore successfully.");
+                        
+                        // 重設表單
+                        newExpense.description = '';
+                        newExpense.amount = null;
+                        newExpense.participants = newExpense.type === '公費' ? [...members] : [newExpense.payer];
+                        
+                    } catch (error) {
+                        console.error("Error adding document:", error);
+                    }
+                }
+            }
+
+            const deleteExpense = async (id) => {
+                if (!isAuthReady.value || !id) return;
+                
+                if (db.value && userId.value) {
+                    try {
+                        const docRef = doc(getExpensesCollection(db.value, userId.value), id);
+                        await deleteDoc(docRef);
+                        console.log("Expense deleted from Firestore successfully.");
+                    } catch (error) {
+                        console.error("Error deleting document:", error);
+                    }
+                }
+            }
+            
+            // --- 公費結算邏輯 (Settlement Logic) ---
 
             // 私費總額計算
             const privateTotals = computed(() => {
@@ -550,7 +720,63 @@
                 }, {})
             })
 
-            // 監聽 type 變化，自動調整 participants 欄位
+            const calculateSettlement = () => {
+                const netBalances = {}
+                members.forEach(m => netBalances[m] = 0)
+
+                const groupExpenses = expenses.filter(e => e.type === '公費')
+
+                groupExpenses.forEach(expense => {
+                    const costPerPerson = Math.round((expense.amount / expense.participants.length) * 100) / 100
+                    const payer = expense.payer
+
+                    members.forEach(member => {
+                        if (expense.participants.includes(member)) {
+                            netBalances[member] -= costPerPerson // 應付 (負債)
+                        }
+                        if (member === payer) {
+                            netBalances[member] += expense.amount // 已付 (資產)
+                        }
+                    })
+                })
+
+                let creditors = []
+                let debtors = []
+                for (const member in netBalances) {
+                    const balance = Math.round(netBalances[member] * 100) / 100
+                    if (balance > 1) { // 債權人
+                        creditors.push({ name: member, amount: balance })
+                    } else if (balance < -1) { // 債務人
+                        debtors.push({ name: member, amount: Math.abs(balance) })
+                    }
+                }
+
+                const newSettlements = []
+                let i = 0
+                let j = 0
+                while (i < debtors.length && j < creditors.length) {
+                    const debtor = debtors[i]
+                    const creditor = creditors[j]
+                    const amountToTransfer = Math.min(debtor.amount, creditor.amount)
+                    if (amountToTransfer > 1) { // 確保轉帳金額大於 1
+                        newSettlements.push({
+                            from: debtor.name,
+                            to: creditor.name,
+                            amount: Math.round(amountToTransfer)
+                        })
+                        debtor.amount -= amountToTransfer
+                        creditor.amount -= amountToTransfer
+                    }
+                    if (debtor.amount <= 1) { i++ }
+                    if (creditor.amount <= 1) { j++ }
+                }
+
+                settlements.value = newSettlements
+            }
+
+
+            // --- 表單/狀態監聽 (Form/State Watchers) ---
+
             watch(() => newExpense.type, (newType) => {
                 if (newType === '公費') {
                     newExpense.participants = [...members]
@@ -559,7 +785,6 @@
                 }
             })
 
-            // 監聽 payer 變化，如果當前是私費，也需要更新 participants
             watch(() => newExpense.payer, (newPayer) => {
                 if (newExpense.type === '私費') {
                     newExpense.participants = [newPayer]
@@ -623,108 +848,6 @@
                 closeItineraryModal()
             }
 
-
-            // --- 分帳記帳功能 (Expense Functions) ---
-
-            const addExpense = () => {
-                if (newExpense.amount > 0 && newExpense.description) {
-                    const expenseType = newExpense.type
-                    let participantsList = []
-
-                    if (expenseType === '公費') {
-                        if (newExpense.participants.length === 0) return
-                        participantsList = [...newExpense.participants]
-                    } else if (expenseType === '私費') {
-                        participantsList = [newExpense.payer]
-                    }
-
-                    expenses.push({
-                        id: nextExpenseId.value++,
-                        type: expenseType,
-                        description: newExpense.description,
-                        amount: newExpense.amount,
-                        payer: newExpense.payer,
-                        participants: participantsList
-                    })
-
-                    // 重設表單 (保持 type 和 payer 不變，重設其他欄位)
-                    newExpense.description = ''
-                    newExpense.amount = null
-                    newExpense.participants = newExpense.type === '公費' ? [...members] : [newExpense.payer]
-
-                    calculateSettlement()
-                }
-            }
-
-            const deleteExpense = (id) => {
-                const index = expenses.findIndex(e => e.id === id)
-                if (index !== -1) {
-                    expenses.splice(index, 1)
-                    calculateSettlement()
-                }
-            }
-
-            // 核心分帳邏輯 (只針對 type = '公費' 的支出進行結算)
-            const calculateSettlement = () => {
-                const netBalances = {}
-                members.forEach(m => netBalances[m] = 0)
-
-                // 只篩選公費進行結算
-                const groupExpenses = expenses.filter(e => e.type === '公費')
-
-                groupExpenses.forEach(expense => {
-                    // 使用 Math.round(cost * 100) / 100 處理浮點數
-                    const costPerPerson = Math.round((expense.amount / expense.participants.length) * 100) / 100
-                    const payer = expense.payer
-
-                    members.forEach(member => {
-                        if (expense.participants.includes(member)) {
-                            netBalances[member] -= costPerPerson // 應付
-                        }
-                        if (member === payer) {
-                            netBalances[member] += expense.amount // 已付
-                        }
-                    })
-                })
-
-                // 2. 找出債權人 (Creditors: 淨餘額 > 1) 和債務人 (Debtors: 淨餘額 < -1)
-                let creditors = []
-                let debtors = []
-                for (const member in netBalances) {
-                    const balance = Math.round(netBalances[member] * 100) / 100
-                    // 為了避免浮點數誤差，只結算絕對值大於 1 的金額
-                    if (balance > 1) {
-                        creditors.push({ name: member, amount: balance })
-                    } else if (balance < -1) {
-                        debtors.push({ name: member, amount: Math.abs(balance) })
-                    }
-                }
-
-                // 3. 結算 (簡化交易)
-                const newSettlements = []
-                let i = 0
-                let j = 0
-                while (i < debtors.length && j < creditors.length) {
-                    const debtor = debtors[i]
-                    const creditor = creditors[j]
-                    const amountToTransfer = Math.min(debtor.amount, creditor.amount)
-                    if (amountToTransfer > 0) {
-                        newSettlements.push({
-                            from: debtor.name,
-                            to: creditor.name,
-                            amount: Math.round(amountToTransfer) // 四捨五入到整數
-                        })
-                        debtor.amount -= amountToTransfer
-                        creditor.amount -= amountToTransfer
-                    }
-                    if (debtor.amount <= 1) { i++ } // 使用 1 作為結束判斷
-                    if (creditor.amount <= 1) { j++ } // 使用 1 作為結束判斷
-                }
-
-                settlements.value = newSettlements
-            }
-
-
             // --- 採購清單功能 (Shopping Functions) ---
 
             const isShoppingModalOpen = ref(false)
@@ -764,7 +887,7 @@
                     const index = shoppingList.findIndex(i => i.id === modalShoppingItem.id);
                     if (index !== -1) { Object.assign(shoppingList[index], { ...itemData, id: modalShoppingItem.id }); }
                 } else {
-                    shoppingList.push({ ...itemData, id: nextShoppingId.value++ });
+                    shoppingList.push({ ...itemData, id: `s${nextShoppingId.value++}` });
                 }
                 closeShoppingModal();
             }
@@ -775,36 +898,41 @@
             }
 
 
-            // 初始載入時計算一次分帳
-            calculateSettlement()
-
             return {
                 currentTab,
                 members,
                 startDate,
                 itinerary,
                 activeDay,
+                // Firebase & Auth State
+                userId,
+                isAuthReady,
+
+                // Expense & Settlement
                 expenses,
                 newExpense,
                 settlements,
                 privateTotals,
-                shoppingList,
-                isItineraryModalOpen,
-                modalItem,
-                isEditing,
-                isShoppingModalOpen,
-                modalShoppingItem,
-                isShoppingEditing,
-
-                getDisplayDate,
-                addDay,
-                deleteItineraryItem,
-                openItineraryModal,
-                closeItineraryModal,
-                saveItineraryItem,
                 addExpense,
                 deleteExpense,
                 calculateSettlement,
+
+                // Itinerary functions/state
+                deleteItineraryItem,
+                getDisplayDate,
+                addDay,
+                isItineraryModalOpen,
+                modalItem,
+                isEditing,
+                openItineraryModal,
+                closeItineraryModal,
+                saveItineraryItem,
+
+                // Shopping list functions/state
+                shoppingList,
+                isShoppingModalOpen,
+                modalShoppingItem,
+                isShoppingEditing,
                 openShoppingModal,
                 closeShoppingModal,
                 saveShoppingItem,
